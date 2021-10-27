@@ -151,9 +151,10 @@ type task struct {
 	block     *types.Block
 	createdAt time.Time
 
-	profit      *big.Int
-	isFlashbots bool
-	worker      int
+	profit       *big.Int
+	isFlashbots  bool
+	worker       int
+	isMegabundle bool
 }
 
 const (
@@ -702,7 +703,7 @@ func (w *worker) taskLoop() {
 			// Interrupt previous sealing operation
 			interrupt()
 			stopCh, prev = make(chan struct{}), sealHash
-			log.Info("Proposed miner block", "blockNumber", task.block.Number(), "profit", ethIntToFloat(prevProfit), "isFlashbots", task.isFlashbots, "sealhash", sealHash, "parentHash", prevParentHash, "worker", task.worker)
+			log.Info("Proposed miner block", "blockNumber", task.block.Number(), "profit", ethIntToFloat(prevProfit), "isFlashbots", task.isFlashbots, "sealhash", sealHash, "parentHash", prevParentHash, "worker", task.worker, "isMegabundle", task.isMegabundle)
 			if w.skipSealHook != nil && w.skipSealHook(task) {
 				continue
 			}
@@ -1230,7 +1231,7 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) {
 			localTxs[account] = txs
 		}
 	}
-	if w.flashbots.isFlashbots {
+	if w.flashbots.isFlashbots && !w.flashbots.isMegabundleWorker {
 		bundles, err := w.eth.TxPool().MevBundles(env.header.Number, env.header.Time)
 		if err != nil {
 			log.Error("Failed to fetch pending transactions", "err", err)
@@ -1249,8 +1250,42 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) {
 		if w.commitBundle(env, bundleTxs, interrupt) {
 			return
 		}
-		env.profit.Add(env.profit, bundle.totalEth)
+		env.profit.Add(env.profit, bundle.ethSentToCoinbase)
 	}
+	if w.flashbots.isMegabundleWorker {
+		megabundle, err := w.eth.TxPool().GetMegabundle(w.flashbots.relayAddr, env.header.Number, env.header.Time)
+		log.Info("Starting to process a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle, "error", err)
+		if err != nil {
+			return // no valid megabundle for this relay, nothing to do
+		}
+		// Flashbots bundle merging duplicates work by simulating TXes and then committing them once more.
+		// Megabundles API focuses on speed and runs everything in one cycle.
+		coinbaseBalanceBefore := env.state.GetBalance(env.coinbase)
+		if w.commitBundle(env, megabundle.Txs, interrupt) {
+			log.Info("Could not commit a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle)
+			return
+		}
+		var txStatuses = map[common.Hash]bool{}
+		for _, receipt := range env.receipts {
+			txStatuses[receipt.TxHash] = receipt.Status == types.ReceiptStatusSuccessful
+		}
+		for _, tx := range megabundle.Txs {
+			status, ok := txStatuses[tx.Hash()]
+			if !ok {
+				log.Error("No TX receipt after megabundle simulation", "TxHash", tx.Hash())
+				return
+			}
+			if !status && !containsHash(megabundle.RevertingTxHashes, tx.Hash()) {
+				log.Info("Ignoring megabundle because of failing TX", "relay", w.flashbots.relayAddr, "TxHash", tx.Hash())
+				return
+			}
+		}
+		coinbaseBalanceAfter := env.state.GetBalance(env.coinbase)
+		coinbaseDelta := big.NewInt(0).Sub(coinbaseBalanceAfter, coinbaseBalanceBefore)
+		env.profit = coinbaseDelta
+		log.Info("Megabundle processed", "relay", w.flashbots.relayAddr, "totalProfit", ethIntToFloat(env.profit))
+	}
+
 	if len(localTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(env.signer, localTxs, env.header.BaseFee)
 		if w.commitTransactions(env, txs, interrupt) {
@@ -1334,12 +1369,12 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		// If we're post merge, just ignore
 		if !w.isTTDReached(block.Header()) {
 			select {
-			case w.taskCh <- &task{receipts: env.receipts, state: env.state, block: block, createdAt: time.Now(), profit: env.profit, isFlashbots: w.flashbots.isFlashbots, worker: w.flashbots.maxMergedBundles}:
+			case w.taskCh <- &task{receipts: env.receipts, state: env.state, block: block, createdAt: time.Now(), profit: env.profit, isFlashbots: w.flashbots.isFlashbots, worker: w.flashbots.maxMergedBundles, isMegabundle: w.flashbots.isMegabundleWorker}:
 				w.unconfirmed.Shift(block.NumberU64() - 1)
 				log.Info("Commit new sealing work", "number", block.Number(), "sealhash", w.engine.SealHash(block.Header()),
 					"uncles", len(env.uncles), "txs", env.tcount, "gas", block.GasUsed(), "fees", totalFees(block, env.receipts),
 					"profit", ethIntToFloat(env.profit), "elapsed", common.PrettyDuration(time.Since(start)),
-					"isFlashbots", w.flashbots.isFlashbots, "worker", w.flashbots.maxMergedBundles)
+					"isFlashbots", w.flashbots.isFlashbots, "worker", w.flashbots.maxMergedBundles, "isMegabundle", w.flashbots.isMegabundleWorker)
 			case <-w.exitCh:
 				log.Info("Worker has exited")
 			}
