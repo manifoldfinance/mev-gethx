@@ -106,6 +106,7 @@ var AppHelpFlagGroups = []flags.FlagGroup{
 			utils.TxPoolAccountQueueFlag,
 			utils.TxPoolGlobalQueueFlag,
 			utils.TxPoolLifetimeFlag,
+			utils.TxPoolPrivateLifetimeFlag,
 		},
 	},
 	{
