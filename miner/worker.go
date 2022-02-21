@@ -220,6 +220,7 @@ type worker struct {
 	exitCh             chan struct{}
 	resubmitIntervalCh chan time.Duration
 	resubmitAdjustCh   chan *intervalAdjust
+	newMegabundleCh    chan *types.MevBundle
 
 	wg sync.WaitGroup
 
@@ -302,16 +303,18 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus
 		txsCh:              make(chan core.NewTxsEvent, txChanSize),
 		chainHeadCh:        make(chan core.ChainHeadEvent, chainHeadChanSize),
 		chainSideCh:        make(chan core.ChainSideEvent, chainSideChanSize),
-		newWorkCh:          make(chan *newWorkReq),
+		newWorkCh:          make(chan *newWorkReq, 1),
 		getWorkCh:          make(chan *getWorkReq),
 		taskCh:             taskCh,
 		resultCh:           make(chan *types.Block, resultQueueSize),
 		exitCh:             exitCh,
 		startCh:            make(chan struct{}, 1),
+		newMegabundleCh:    make(chan *types.MevBundle),
 		resubmitIntervalCh: make(chan time.Duration),
 		resubmitAdjustCh:   make(chan *intervalAdjust, resubmitAdjustChanSize),
 		flashbots:          flashbots,
 	}
+
 	// Subscribe NewTxsEvent for tx pool
 	worker.txsSub = eth.TxPool().SubscribeNewTxsEvent(worker.txsCh)
 	// Subscribe events for blockchain
@@ -457,26 +460,38 @@ func recalcRecommit(minRecommit, prev time.Duration, target float64, inc bool) t
 func (w *worker) newWorkLoop(recommit time.Duration) {
 	defer w.wg.Done()
 	var (
-		interrupt   *int32
-		minRecommit = recommit // minimal resubmit interval specified by user.
-		timestamp   int64      // timestamp for each round of sealing.
+		runningInterrupt *int32     // Running task interrupt
+		queuedInterrupt  *int32     // Queued task interrupt
+		minRecommit      = recommit // minimal resubmit interval specified by user.
+		timestamp        int64      // timestamp for each round of sealing.
 	)
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	<-timer.C // discard the initial tick
 
-	// commit aborts in-flight transaction execution with given signal and resubmits a new one.
+	// commit aborts in-flight transaction execution with highest seen signal and resubmits a new one
 	commit := func(noempty bool, s int32) {
-		if interrupt != nil {
-			atomic.StoreInt32(interrupt, s)
-		}
-		interrupt = new(int32)
 		select {
-		case w.newWorkCh <- &newWorkReq{interrupt: interrupt, noempty: noempty, timestamp: timestamp}:
 		case <-w.exitCh:
 			return
+		case queuedRequest := <-w.newWorkCh:
+			// Previously queued request wasn't started yet, update the request and resubmit
+			queuedRequest.noempty = queuedRequest.noempty || noempty
+			queuedRequest.timestamp = timestamp
+			w.newWorkCh <- queuedRequest // guaranteed to be nonblocking
+		default:
+			// Previously queued request has already started, cycle interrupt pointer and submit new work
+			runningInterrupt = queuedInterrupt
+			queuedInterrupt = new(int32)
+
+			w.newWorkCh <- &newWorkReq{interrupt: queuedInterrupt, noempty: noempty, timestamp: timestamp} // guaranteed to be nonblocking
 		}
+
+		if runningInterrupt != nil && s > atomic.LoadInt32(runningInterrupt) {
+			atomic.StoreInt32(runningInterrupt, s)
+		}
+
 		timer.Reset(recommit)
 		atomic.StoreInt32(&w.newTxs, 0)
 	}
@@ -502,6 +517,11 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 			clearPending(head.Block.NumberU64())
 			timestamp = time.Now().Unix()
 			commit(false, commitInterruptNewHead)
+
+		case <-w.newMegabundleCh:
+			if w.isRunning() {
+				commit(true, commitInterruptNone)
+			}
 
 		case <-timer.C:
 			// If sealing is running resubmit a new work cycle periodically to pull in
@@ -571,7 +591,10 @@ func (w *worker) mainLoop() {
 	for {
 		select {
 		case req := <-w.newWorkCh:
-			w.commitWork(req.interrupt, req.noempty, req.timestamp)
+			// Don't start if the work has already been interrupted
+			if req.interrupt == nil || atomic.LoadInt32(req.interrupt) == commitInterruptNone {
+				w.commitWork(req.interrupt, req.noempty, req.timestamp)
+			}
 
 		case req := <-w.getWorkCh:
 			block, err := w.generateWork(req.params)
@@ -718,7 +741,7 @@ func (w *worker) taskLoop() {
 			w.pendingTasks[sealHash] = task
 			w.pendingMu.Unlock()
 
-			if err := w.engine.Seal(w.chain, task.block, w.resultCh, stopCh); err != nil {
+			if err := w.engine.Seal(w.chain, task.block, task.profit, w.resultCh, stopCh); err != nil {
 				log.Warn("Block sealing failed", "err", err)
 				w.pendingMu.Lock()
 				delete(w.pendingTasks, sealHash)
@@ -1264,14 +1287,15 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 		megabundle, err := w.eth.TxPool().GetMegabundle(w.flashbots.relayAddr, env.header.Number, env.header.Time)
 		log.Info("Starting to process a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle, "error", err)
 		if err != nil {
-			return // no valid megabundle for this relay, nothing to do
+			return err // no valid megabundle for this relay, nothing to do
 		}
+
 		// Flashbots bundle merging duplicates work by simulating TXes and then committing them once more.
 		// Megabundles API focuses on speed and runs everything in one cycle.
 		coinbaseBalanceBefore := env.state.GetBalance(env.coinbase)
-		if w.commitBundle(env, megabundle.Txs, interrupt) {
+		if err := w.commitBundle(env, megabundle.Txs, interrupt); err != nil {
 			log.Info("Could not commit a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle)
-			return
+			return err
 		}
 		var txStatuses = map[common.Hash]bool{}
 		for _, receipt := range env.receipts {
@@ -1281,11 +1305,11 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 			status, ok := txStatuses[tx.Hash()]
 			if !ok {
 				log.Error("No TX receipt after megabundle simulation", "TxHash", tx.Hash())
-				return
+				return errors.New("could not apply megabundle")
 			}
 			if !status && !containsHash(megabundle.RevertingTxHashes, tx.Hash()) {
 				log.Info("Ignoring megabundle because of failing TX", "relay", w.flashbots.relayAddr, "TxHash", tx.Hash())
-				return
+				return errors.New("reverting megabundle tx")
 			}
 		}
 		coinbaseBalanceAfter := env.state.GetBalance(env.coinbase)
