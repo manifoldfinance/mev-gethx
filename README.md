@@ -20,6 +20,7 @@ See [here](https://docs.flashbots.net) for Flashbots documentation.
 
 | Version | Spec                                                                                        |
 | ------- | ------------------------------------------------------------------------------------------- |
+| v0.6    | [MEV-Geth Spec v0.6](https://docs.flashbots.net/flashbots-auction/miners/mev-geth-spec/v06) |
 | v0.5    | [MEV-Geth Spec v0.5](https://docs.flashbots.net/flashbots-auction/miners/mev-geth-spec/v05) |
 | v0.4    | [MEV-Geth Spec v0.4](https://docs.flashbots.net/flashbots-auction/miners/mev-geth-spec/v04) |
 | v0.3    | [MEV-Geth Spec v0.3](https://docs.flashbots.net/flashbots-auction/miners/mev-geth-spec/v03) |
