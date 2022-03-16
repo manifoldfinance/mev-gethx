@@ -1222,6 +1222,10 @@ func RPCMarshalBlock(block *types.Block, inclTx bool, fullTx bool, config *param
 	fields := RPCMarshalHeader(block.Header())
 	fields["size"] = hexutil.Uint64(block.Size())
 
+	if fields["baseFeePerGas"] != nil {
+		fields["nextBaseFeePerGas"] = misc.CalcBaseFee(config, block.Header())
+	}
+
 	if inclTx {
 		formatTx := func(tx *types.Transaction) (interface{}, error) {
 			return tx.Hash(), nil
