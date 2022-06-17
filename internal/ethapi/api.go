@@ -840,6 +840,56 @@ func (s *PublicBlockChainAPI) GetStorageAt(ctx context.Context, address common.A
 	return res[:], state.Error()
 }
 
+// gets all receipts in block
+// Note, this method doesnt return the entire transaction receipt to save resources
+func (s *PublicBlockChainAPI) GetBlockReceipts(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
+	receipts, err := s.b.GetReceipts(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	resultFields := map[string]interface{}{
+		"blockHash": hash,
+		"receipts":  []map[string]interface{}{},
+	}
+
+	// add all receipts to the result
+	for _, receipt := range receipts {
+		fields := map[string]interface{}{
+			"transactionHash":   receipt.TxHash,
+			"transactionIndex":  receipt.TransactionIndex,
+			"gasUsed":           hexutil.Uint64(receipt.GasUsed),
+			"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
+			"contractAddress":   nil,
+			"logs":              receipt.Logs,
+			"type":              hexutil.Uint(receipt.Type),
+		}
+		// we dont need to return gas price atm
+		// // Assign the effective gas price paid
+		// if isLondon {
+		// 	fields["effectiveGasPrice"] = hexutil.Uint64(tx.GasPrice().Uint64())
+		// } else {
+		// 	gasPrice := new(big.Int).Add(header.BaseFee, tx.EffectiveGasTipValue(header.BaseFee))
+		// 	fields["effectiveGasPrice"] = hexutil.Uint64(gasPrice.Uint64())
+		// }
+		// Assign receipt status or post state.
+		if len(receipt.PostState) > 0 {
+			fields["root"] = hexutil.Bytes(receipt.PostState)
+		} else {
+			fields["status"] = hexutil.Uint(receipt.Status)
+		}
+		if receipt.Logs == nil {
+			fields["logs"] = []*types.Log{}
+		}
+		// If the ContractAddress is 20 0x0 bytes, assume it is not a contract creation
+		if receipt.ContractAddress != (common.Address{}) {
+			fields["contractAddress"] = receipt.ContractAddress
+		}
+		resultFields["receipts"] = append(resultFields["receipts"].([]map[string]interface{}), fields)
+	}
+
+	return resultFields, nil
+}
+
 // OverrideAccount indicates the overriding fields of account during the execution
 // of a message call.
 // Note, state and stateDiff can't be specified at the same time. If state is
