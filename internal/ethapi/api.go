@@ -856,7 +856,7 @@ func (s *PublicBlockChainAPI) GetBlockReceipts(ctx context.Context, hash common.
 	for _, receipt := range receipts {
 		fields := map[string]interface{}{
 			"transactionHash":   receipt.TxHash,
-			"transactionIndex":  receipt.TransactionIndex,
+			"transactionIndex":  hexutil.Uint64(receipt.TransactionIndex),
 			"gasUsed":           hexutil.Uint64(receipt.GasUsed),
 			"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
 			"contractAddress":   nil,
