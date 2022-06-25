@@ -78,6 +78,13 @@ const (
 	staleThreshold = 7
 )
 
+var (
+	errCouldNotApplyTransaction   = errors.New("could not apply transaction")
+	errBundleInterrupted          = errors.New("interrupt while applying bundles")
+	errBlockInterruptedByNewHead  = errors.New("new head arrived while building block")
+	errBlockInterruptedByRecommit = errors.New("recommit interrupt while building block")
+)
+
 // environment is the worker's current environment and holds all
 // information of the sealing block generation.
 type environment struct {
@@ -173,8 +180,8 @@ type newWorkReq struct {
 // getWorkReq represents a request for getting a new sealing work with provided parameters.
 type getWorkReq struct {
 	params *generateParams
-	err    error
-	result chan *types.Block
+	result chan *types.Block // non-blocking channel
+	err    chan error
 }
 
 // intervalAdjust represents a resubmitting interval adjustment.
@@ -592,12 +599,12 @@ func (w *worker) mainLoop() {
 		case req := <-w.getWorkCh:
 			block, err := w.generateWork(req.params)
 			if err != nil {
-				req.err = err
+				req.err <- err
 				req.result <- nil
 			} else {
+				req.err <- nil
 				req.result <- block
 			}
-
 		case ev := <-w.chainSideCh:
 			// Short circuit for duplicate side blocks
 			if _, exist := w.localUncles[ev.Block.Hash()]; exist {
@@ -925,8 +932,7 @@ func (w *worker) commitTransaction(env *environment, tx *types.Transaction) ([]*
 	return receipt.Logs, nil
 }
 
-// Returns whether the block should be discarded
-func (w *worker) commitBundle(env *environment, txs types.Transactions, interrupt *int32) bool {
+func (w *worker) commitBundle(env *environment, txs types.Transactions, interrupt *int32) error {
 	gasLimit := env.header.GasLimit
 	if env.gasPool == nil {
 		env.gasPool = new(core.GasPool).AddGas(gasLimit)
@@ -952,14 +958,13 @@ func (w *worker) commitBundle(env *environment, txs types.Transactions, interrup
 					inc:   true,
 				}
 			}
-
-			return true
+			return errBundleInterrupted
 		}
 		// If we don't have enough gas for any further transactions discard the block
 		// since not all bundles of the were applied
 		if env.gasPool.Gas() < params.TxGas {
 			log.Trace("Not enough gas for further transactions", "have", env.gasPool, "want", params.TxGas)
-			return true
+			return errCouldNotApplyTransaction
 		}
 
 		// Error may be ignored here. The error has already been checked
@@ -971,8 +976,7 @@ func (w *worker) commitBundle(env *environment, txs types.Transactions, interrup
 		// phase, start ignoring the sender until we do.
 		if tx.Protected() && !w.chainConfig.IsEIP155(env.header.Number) {
 			log.Trace("Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
-
-			return true
+			return errCouldNotApplyTransaction
 		}
 		// Start executing the transaction
 		env.state.Prepare(tx.Hash(), env.tcount)
@@ -982,17 +986,17 @@ func (w *worker) commitBundle(env *environment, txs types.Transactions, interrup
 		case errors.Is(err, core.ErrGasLimitReached):
 			// Pop the current out-of-gas transaction without shifting in the next from the account
 			log.Trace("Gas limit exceeded for current block", "sender", from)
-			return true
+			return errCouldNotApplyTransaction
 
 		case errors.Is(err, core.ErrNonceTooLow):
 			// New head notification data race between the transaction pool and miner, shift
 			log.Trace("Skipping transaction with low nonce", "sender", from, "nonce", tx.Nonce())
-			return true
+			return errCouldNotApplyTransaction
 
 		case errors.Is(err, core.ErrNonceTooHigh):
 			// Reorg notification data race between the transaction pool and miner, skip account =
 			log.Trace("Skipping account with hight nonce", "sender", from, "nonce", tx.Nonce())
-			return true
+			return errCouldNotApplyTransaction
 
 		case errors.Is(err, nil):
 			// Everything ok, collect the logs and shift in the next transaction from the same account
@@ -1003,13 +1007,13 @@ func (w *worker) commitBundle(env *environment, txs types.Transactions, interrup
 		case errors.Is(err, core.ErrTxTypeNotSupported):
 			// Pop the unsupported transaction without shifting in the next from the account
 			log.Trace("Skipping unsupported transaction type", "sender", from, "type", tx.Type())
-			return true
+			return errCouldNotApplyTransaction
 
 		default:
 			// Strange error, discard the transaction and get the next in line (note, the
 			// nonce-too-high clause will prevent us from executing in vain).
 			log.Debug("Transaction failed, account skipped", "hash", tx.Hash(), "err", err)
-			return true
+			return errCouldNotApplyTransaction
 		}
 	}
 
@@ -1033,10 +1037,10 @@ func (w *worker) commitBundle(env *environment, txs types.Transactions, interrup
 	if interrupt != nil {
 		w.resubmitAdjustCh <- &intervalAdjust{inc: false}
 	}
-	return false
+	return nil
 }
 
-func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByPriceAndNonce, interrupt *int32) bool {
+func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByPriceAndNonce, interrupt *int32) error {
 	gasLimit := env.header.GasLimit
 	if env.gasPool == nil {
 		env.gasPool = new(core.GasPool).AddGas(gasLimit)
@@ -1061,9 +1065,9 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 					ratio: ratio,
 					inc:   true,
 				}
+				return errBlockInterruptedByRecommit
 			}
-
-			return atomic.LoadInt32(interrupt) == commitInterruptNewHead
+			return errBlockInterruptedByNewHead
 		}
 		// If we don't have enough gas for any further transactions then we're done
 		if env.gasPool.Gas() < params.TxGas {
@@ -1147,7 +1151,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 	if interrupt != nil {
 		w.resubmitAdjustCh <- &intervalAdjust{inc: false}
 	}
-	return false
+	return nil
 }
 
 // generateParams wraps various of settings for generating sealing task.
@@ -1159,6 +1163,7 @@ type generateParams struct {
 	random     common.Hash    // The randomness generated by beacon chain, empty before the merge
 	noUncle    bool           // Flag whether the uncle block inclusion is allowed
 	noExtra    bool           // Flag whether the extra field assignment is allowed
+	noTxs      bool           // Flag whether an empty block without any transaction is expected
 }
 
 // prepareWork constructs the sealing task according to the given parameters,
@@ -1246,8 +1251,7 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 // fillTransactions retrieves the pending transactions from the txpool and fills them
 // into the given sealing block. The transaction selection and ordering strategy can
 // be customized with the plugin in the future.
-// Returns whether the block should be discarded.
-func (w *worker) fillTransactions(interrupt *int32, env *environment) bool {
+func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 	// Split the pending transactions into locals and remotes
 	// Fill the block with all available pending transactions.
 	pending := w.eth.TxPool().Pending(true)
@@ -1262,20 +1266,20 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) bool {
 		bundles, err := w.eth.TxPool().MevBundles(env.header.Number, env.header.Time)
 		if err != nil {
 			log.Error("Failed to fetch pending transactions", "err", err)
-			return true
+			return err
 		}
 
 		bundleTxs, bundle, numBundles, err := w.generateFlashbotsBundle(env, bundles, pending)
 		if err != nil {
 			log.Error("Failed to generate flashbots bundle", "err", err)
-			return true
+			return err
 		}
 		log.Info("Flashbots bundle", "ethToCoinbase", ethIntToFloat(bundle.totalEth), "gasUsed", bundle.totalGasUsed, "bundleScore", bundle.mevGasPrice, "bundleLength", len(bundleTxs), "numBundles", numBundles, "worker", w.flashbots.maxMergedBundles)
 		if len(bundleTxs) == 0 {
-			return true
+			return errors.New("no bundles to apply")
 		}
-		if w.commitBundle(env, bundleTxs, interrupt) {
-			return true
+		if err := w.commitBundle(env, bundleTxs, interrupt); err != nil {
+			return err
 		}
 		env.profit.Add(env.profit, bundle.ethSentToCoinbase)
 	}
@@ -1283,15 +1287,15 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) bool {
 		megabundle, err := w.eth.TxPool().GetMegabundle(w.flashbots.relayAddr, env.header.Number, env.header.Time)
 		log.Info("Starting to process a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle, "error", err)
 		if err != nil {
-			return true // no valid megabundle for this relay, nothing to do
+			return err // no valid megabundle for this relay, nothing to do
 		}
 
 		// Flashbots bundle merging duplicates work by simulating TXes and then committing them once more.
 		// Megabundles API focuses on speed and runs everything in one cycle.
 		coinbaseBalanceBefore := env.state.GetBalance(env.coinbase)
-		if w.commitBundle(env, megabundle.Txs, interrupt) {
+		if err := w.commitBundle(env, megabundle.Txs, interrupt); err != nil {
 			log.Info("Could not commit a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle)
-			return true
+			return err
 		}
 		var txStatuses = map[common.Hash]bool{}
 		for _, receipt := range env.receipts {
@@ -1301,11 +1305,11 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) bool {
 			status, ok := txStatuses[tx.Hash()]
 			if !ok {
 				log.Error("No TX receipt after megabundle simulation", "TxHash", tx.Hash())
-				return true
+				return errors.New("could not apply megabundle")
 			}
 			if !status && !containsHash(megabundle.RevertingTxHashes, tx.Hash()) {
 				log.Info("Ignoring megabundle because of failing TX", "relay", w.flashbots.relayAddr, "TxHash", tx.Hash())
-				return true
+				return errors.New("reverting megabundle tx")
 			}
 		}
 		coinbaseBalanceAfter := env.state.GetBalance(env.coinbase)
@@ -1316,18 +1320,17 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) bool {
 
 	if len(localTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(env.signer, localTxs, env.header.BaseFee)
-		if w.commitTransactions(env, txs, interrupt) {
-			return true
+		if err := w.commitTransactions(env, txs, interrupt); err != nil {
+			return err
 		}
 	}
 	if len(remoteTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(env.signer, remoteTxs, env.header.BaseFee)
-		if w.commitTransactions(env, txs, interrupt) {
-			return true
+		if err := w.commitTransactions(env, txs, interrupt); err != nil {
+			return err
 		}
 	}
-
-	return false
+	return nil
 }
 
 // generateWork generates a sealing block based on the given parameters.
@@ -1338,11 +1341,11 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	}
 	defer work.discard()
 
-	shouldDiscard := w.fillTransactions(nil, work)
-	if shouldDiscard {
-		return nil, errors.New("could not generate valid block")
+	if !params.noTxs {
+		if err := w.fillTransactions(nil, work); err != nil {
+			return nil, err
+		}
 	}
-
 	return w.engine.FinalizeAndAssemble(w.chain, work.header, work.state, work.txs, work.unclelist(), work.receipts)
 }
 
@@ -1372,13 +1375,13 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	if !noempty && atomic.LoadUint32(&w.noempty) == 0 {
 		w.commit(work.copy(), nil, false, start)
 	}
+
 	// Fill pending transactions from the txpool
-	shouldDiscard := w.fillTransactions(interrupt, work)
-	if shouldDiscard {
+	err = w.fillTransactions(interrupt, work)
+	if err != nil && !errors.Is(err, errBlockInterruptedByRecommit) {
 		work.discard()
 		return
 	}
-
 	w.commit(work.copy(), w.fullTaskHook, true, start)
 
 	// Swap out the old work with the new one, terminating any leftover
@@ -1426,7 +1429,13 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 }
 
 // getSealingBlock generates the sealing block based on the given parameters.
-func (w *worker) getSealingBlock(parent common.Hash, timestamp uint64, coinbase common.Address, random common.Hash) (*types.Block, error) {
+// The generation result will be passed back via the given channel no matter
+// the generation itself succeeds or not.
+func (w *worker) getSealingBlock(parent common.Hash, timestamp uint64, coinbase common.Address, random common.Hash, noTxs bool) (chan *types.Block, chan error, error) {
+	var (
+		resCh = make(chan *types.Block, 1)
+		errCh = make(chan error, 1)
+	)
 	req := &getWorkReq{
 		params: &generateParams{
 			timestamp:  timestamp,
@@ -1436,18 +1445,16 @@ func (w *worker) getSealingBlock(parent common.Hash, timestamp uint64, coinbase 
 			random:     random,
 			noUncle:    true,
 			noExtra:    true,
+			noTxs:      noTxs,
 		},
-		result: make(chan *types.Block, 1),
+		result: resCh,
+		err:    errCh,
 	}
 	select {
 	case w.getWorkCh <- req:
-		block := <-req.result
-		if block == nil {
-			return nil, req.err
-		}
-		return block, nil
+		return resCh, errCh, nil
 	case <-w.exitCh:
-		return nil, errors.New("miner closed")
+		return nil, nil, errors.New("miner closed")
 	}
 }
 
