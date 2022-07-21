@@ -1285,7 +1285,7 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 	}
 	if w.flashbots.isMegabundleWorker {
 		megabundle, err := w.eth.TxPool().GetMegabundle(w.flashbots.relayAddr, env.header.Number, env.header.Time)
-		log.Info("Starting to process a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle, "error", err)
+		log.Debug("Starting to process a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle, "error", err)
 		if err != nil {
 			return err // no valid megabundle for this relay, nothing to do
 		}
