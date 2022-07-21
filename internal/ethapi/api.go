@@ -2399,6 +2399,7 @@ type CallBundleArgs struct {
 	BaseFee                *big.Int              `json:"baseFee"`
 	SimulationLogs         bool                  `json:"simulationLogs"`
 	CreateAccessList       bool                  `json:"createAccessList"`
+	StateOverrides         *StateOverride		  `json:"stateOverrides"`
 }
 
 // CallBundle will simulate a bundle of transactions at the top of a given block
@@ -2433,6 +2434,9 @@ func (s *BundleAPI) CallBundle(ctx context.Context, args CallBundleArgs) (map[st
 	timeout := time.Millisecond * time.Duration(timeoutMilliSeconds)
 	state, parent, err := s.b.StateAndHeaderByNumberOrHash(ctx, args.StateBlockNumberOrHash)
 	if state == nil || err != nil {
+		return nil, err
+	}
+	if err := args.StateOverrides.Apply(state); err != nil {
 		return nil, err
 	}
 	blockNumber := big.NewInt(int64(args.BlockNumber))
