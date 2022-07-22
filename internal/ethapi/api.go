@@ -1407,10 +1407,10 @@ func RPCMarshalBlock(block *types.Block, inclTx bool, fullTx bool, config *param
 // for use with mevgeth++ custom rpc functions for efficient block data fetching
 func RPCMarshalMinimalBlock(block *types.Block) map[string]interface{} {
 	return map[string]interface{}{
-		"number":     block.Number(),
+		"number":     (*hexutil.Big)(block.Number()),
 		"hash":       block.Hash(),
 		"parentHash": block.ParentHash(),
-		"difficulty": block.Difficulty(),
+		"difficulty": (*hexutil.Big)(block.Difficulty()),
 	}
 }
 
