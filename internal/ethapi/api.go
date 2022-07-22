@@ -896,6 +896,63 @@ func (s *PublicBlockChainAPI) GetBlockReceipts(ctx context.Context, hash common.
 	return resultFields, nil
 }
 
+func (s *PublicBlockChainAPI) GetMinimalBlockLogs(ctx context.Context, hash common.Hash) ([]interface{}, error) {
+	receipts, err := s.b.GetReceipts(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	resultLogs := []interface{}{}
+	for _, receipt := range receipts {
+		for _, log := range receipt.Logs {
+			resultLogs = append(resultLogs, map[string]interface{}{
+				"address": log.Address,
+				"topics":  log.Topics,
+				"data":    hexutil.Bytes(log.Data),
+			})
+		}
+	}
+	return resultLogs, nil
+}
+
+// gets minimal block parameters
+// for 0x2's bots- you might or might not find this useful, but doesnt really hurt to make it public lol
+func (s *PublicBlockChainAPI) GetMinimalBlockByNumber(ctx context.Context, number rpc.BlockNumber) (map[string]interface{}, error) {
+	block, err := s.b.BlockByNumber(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	return RPCMarshalMinimalBlock(block), nil
+}
+
+// gets minimal block data along with their logs (this function is used to get absolute minimal data out of the node)
+// also for 0x2's bots- might or might not be useful to you
+func (s *PublicBlockChainAPI) GetBatchBlockDataByNumbers(ctx context.Context, blockNrs []rpc.BlockNumber) (map[string]interface{}, error) {
+	resultFields := map[string]interface{}{}
+	for _, blockNr := range blockNrs {
+		block, err := s.b.BlockByNumber(ctx, blockNr)
+		if err != nil {
+			return nil, err
+		}
+		blockData := RPCMarshalMinimalBlock(block)
+		blockData["logs"] = []map[string]interface{}{}
+		receipts, err := s.b.GetReceipts(ctx, block.Hash())
+		if err != nil {
+			return nil, err
+		}
+		for _, receipt := range receipts { // fill in compact receipt data
+			for _, log := range receipt.Logs {
+				blockData["logs"] = append(blockData["logs"].([]map[string]interface{}), map[string]interface{}{
+					"address": log.Address,
+					"topics":  log.Topics,
+					"data":    hexutil.Bytes(log.Data),
+				})
+			}
+		}
+		resultFields[block.Number().String()] = blockData
+	}
+	return resultFields, nil
+}
+
 // OverrideAccount indicates the overriding fields of account during the execution
 // of a message call.
 // Note, state and stateDiff can't be specified at the same time. If state is
@@ -1344,6 +1401,17 @@ func RPCMarshalBlock(block *types.Block, inclTx bool, fullTx bool, config *param
 	fields["uncles"] = uncleHashes
 
 	return fields, nil
+}
+
+// RPCMatshalMinimalBlock converts the given block into JSONRPC output, but only returning select fields.
+// for use with mevgeth++ custom rpc functions for efficient block data fetching
+func RPCMarshalMinimalBlock(block *types.Block) map[string]interface{} {
+	return map[string]interface{}{
+		"number":     block.Number(),
+		"hash":       block.Hash(),
+		"parentHash": block.ParentHash(),
+		"difficulty": block.Difficulty(),
+	}
 }
 
 // rpcMarshalHeader uses the generalized output filler, then adds the total difficulty field, which requires
@@ -2399,7 +2467,7 @@ type CallBundleArgs struct {
 	BaseFee                *big.Int              `json:"baseFee"`
 	SimulationLogs         bool                  `json:"simulationLogs"`
 	CreateAccessList       bool                  `json:"createAccessList"`
-	StateOverrides         *StateOverride		  `json:"stateOverrides"`
+	StateOverrides         *StateOverride        `json:"stateOverrides"`
 }
 
 // CallBundle will simulate a bundle of transactions at the top of a given block

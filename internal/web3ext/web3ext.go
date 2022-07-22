@@ -572,6 +572,24 @@ web3._extend({
 			inputFormatter: [null]
 		}),
 		new web3._extend.Method({
+			name: 'getMinimalBlockLogs',
+			call: 'eth_getMinimalBlockLogs',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'getMinimalBlockByNumber',
+			call: 'eth_getMinimalBlockByNumber',
+			params: 1,
+			inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'getBatchBlockDataByNumbers',
+			call: 'eth_getBatchBlockDataByNumbers',
+			params: 1,
+			inputFormatter: [function (val) { return val.map(web3._extend.formatters.inputBlockNumberFormatter); }]
+		}),
+		new web3._extend.Method({
 			name: 'getRawTransaction',
 			call: 'eth_getRawTransactionByHash',
 			params: 1
