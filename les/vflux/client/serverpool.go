@@ -222,6 +222,7 @@ func (s *serverPoolIterator) Close() {
 func (s *ServerPool) AddMetrics(
 	suggestedTimeoutGauge, totalValueGauge, serverSelectableGauge, serverConnectedGauge metrics.Gauge,
 	sessionValueMeter, serverDialedMeter metrics.Meter) {
+
 	s.suggestedTimeoutGauge = suggestedTimeoutGauge
 	s.totalValueGauge = totalValueGauge
 	s.sessionValueMeter = sessionValueMeter

@@ -94,6 +94,7 @@ func (ec *EthereumClient) GetTransactionCount(ctx *Context, hash *Hash) (count i
 func (ec *EthereumClient) GetTransactionInBlock(ctx *Context, hash *Hash, index int) (tx *Transaction, _ error) {
 	rawTx, err := ec.client.TransactionInBlock(ctx.context, hash.hash, uint(index))
 	return &Transaction{rawTx}, err
+
 }
 
 // GetTransactionReceipt returns the receipt of a transaction by transaction hash.

@@ -244,6 +244,7 @@ func TestT8n(t *testing.T) {
 			expExitCode: 3,
 		},
 	} {
+
 		args := []string{"t8n"}
 		args = append(args, tc.output.get()...)
 		args = append(args, tc.input.get(tc.base)...)
@@ -354,6 +355,7 @@ func TestT9n(t *testing.T) {
 			expExitCode: t8ntool.ErrorIO,
 		},
 	} {
+
 		args := []string{"t9n"}
 		args = append(args, tc.input.get(tc.base)...)
 
@@ -473,6 +475,7 @@ func TestB11r(t *testing.T) {
 			expOut: "exp.json",
 		},
 	} {
+
 		args := []string{"b11r"}
 		args = append(args, tc.input.get(tc.base)...)
 

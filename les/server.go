@@ -159,15 +159,21 @@ func (s *LesServer) APIs() []rpc.API {
 	return []rpc.API{
 		{
 			Namespace: "les",
-			Service:   NewLightAPI(&s.lesCommons),
+			Version:   "1.0",
+			Service:   NewPrivateLightAPI(&s.lesCommons),
+			Public:    false,
 		},
 		{
 			Namespace: "les",
-			Service:   NewLightServerAPI(s),
+			Version:   "1.0",
+			Service:   NewPrivateLightServerAPI(s),
+			Public:    false,
 		},
 		{
 			Namespace: "debug",
-			Service:   NewDebugAPI(s),
+			Version:   "1.0",
+			Service:   NewPrivateDebugAPI(s),
+			Public:    false,
 		},
 	}
 }

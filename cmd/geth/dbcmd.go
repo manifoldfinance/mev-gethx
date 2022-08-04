@@ -37,28 +37,29 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/olekukonko/tablewriter"
-	"github.com/urfave/cli/v2"
+	"gopkg.in/urfave/cli.v1"
 )
 
 var (
-	removedbCommand = &cli.Command{
-		Action:    removeDB,
+	removedbCommand = cli.Command{
+		Action:    utils.MigrateFlags(removeDB),
 		Name:      "removedb",
 		Usage:     "Remove blockchain and state databases",
 		ArgsUsage: "",
 		Flags:     utils.DatabasePathFlags,
+		Category:  "DATABASE COMMANDS",
 		Description: `
 Remove blockchain and state databases`,
 	}
-	dbCommand = &cli.Command{
+	dbCommand = cli.Command{
 		Name:      "db",
 		Usage:     "Low level database operations",
 		ArgsUsage: "",
-		Subcommands: []*cli.Command{
+		Category:  "DATABASE COMMANDS",
+		Subcommands: []cli.Command{
 			dbInspectCmd,
 			dbStatCmd,
 			dbCompactCmd,
@@ -74,39 +75,39 @@ Remove blockchain and state databases`,
 			dbCheckStateContentCmd,
 		},
 	}
-	dbInspectCmd = &cli.Command{
-		Action:    inspect,
+	dbInspectCmd = cli.Command{
+		Action:    utils.MigrateFlags(inspect),
 		Name:      "inspect",
 		ArgsUsage: "<prefix> <start>",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Usage:       "Inspect the storage size for each type of data in the database",
 		Description: `This commands iterates the entire database. If the optional 'prefix' and 'start' arguments are provided, then the iteration is limited to the given subset of data.`,
 	}
-	dbCheckStateContentCmd = &cli.Command{
-		Action:    checkStateContent,
+	dbCheckStateContentCmd = cli.Command{
+		Action:    utils.MigrateFlags(checkStateContent),
 		Name:      "check-state-content",
 		ArgsUsage: "<start (optional)>",
-		Flags:     flags.Merge(utils.NetworkFlags, utils.DatabasePathFlags),
+		Flags:     utils.GroupFlags(utils.NetworkFlags, utils.DatabasePathFlags),
 		Usage:     "Verify that state data is cryptographically correct",
 		Description: `This command iterates the entire database for 32-byte keys, looking for rlp-encoded trie nodes.
 For each trie node encountered, it checks that the key corresponds to the keccak256(value). If this is not true, this indicates
 a data corruption.`,
 	}
-	dbStatCmd = &cli.Command{
-		Action: dbStats,
+	dbStatCmd = cli.Command{
+		Action: utils.MigrateFlags(dbStats),
 		Name:   "stats",
 		Usage:  "Print leveldb statistics",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 	}
-	dbCompactCmd = &cli.Command{
-		Action: dbCompact,
+	dbCompactCmd = cli.Command{
+		Action: utils.MigrateFlags(dbCompact),
 		Name:   "compact",
 		Usage:  "Compact leveldb database. WARNING: May take a very long time",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 			utils.CacheFlag,
 			utils.CacheDatabaseFlag,
@@ -115,93 +116,93 @@ a data corruption.`,
 WARNING: This operation may take a very long time to finish, and may cause database
 corruption if it is aborted during execution'!`,
 	}
-	dbGetCmd = &cli.Command{
-		Action:    dbGet,
+	dbGetCmd = cli.Command{
+		Action:    utils.MigrateFlags(dbGet),
 		Name:      "get",
 		Usage:     "Show the value of a database key",
 		ArgsUsage: "<hex-encoded key>",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: "This command looks up the specified database key from the database.",
 	}
-	dbDeleteCmd = &cli.Command{
-		Action:    dbDelete,
+	dbDeleteCmd = cli.Command{
+		Action:    utils.MigrateFlags(dbDelete),
 		Name:      "delete",
 		Usage:     "Delete a database key (WARNING: may corrupt your database)",
 		ArgsUsage: "<hex-encoded key>",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: `This command deletes the specified database key from the database. 
 WARNING: This is a low-level operation which may cause database corruption!`,
 	}
-	dbPutCmd = &cli.Command{
-		Action:    dbPut,
+	dbPutCmd = cli.Command{
+		Action:    utils.MigrateFlags(dbPut),
 		Name:      "put",
 		Usage:     "Set the value of a database key (WARNING: may corrupt your database)",
 		ArgsUsage: "<hex-encoded key> <hex-encoded value>",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: `This command sets a given database key to the given value. 
 WARNING: This is a low-level operation which may cause database corruption!`,
 	}
-	dbGetSlotsCmd = &cli.Command{
-		Action:    dbDumpTrie,
+	dbGetSlotsCmd = cli.Command{
+		Action:    utils.MigrateFlags(dbDumpTrie),
 		Name:      "dumptrie",
 		Usage:     "Show the storage key/values of a given storage trie",
 		ArgsUsage: "<hex-encoded storage trie root> <hex-encoded start (optional)> <int max elements (optional)>",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: "This command looks up the specified database key from the database.",
 	}
-	dbDumpFreezerIndex = &cli.Command{
-		Action:    freezerInspect,
+	dbDumpFreezerIndex = cli.Command{
+		Action:    utils.MigrateFlags(freezerInspect),
 		Name:      "freezer-index",
 		Usage:     "Dump out the index of a given freezer type",
 		ArgsUsage: "<type> <start (int)> <end (int)>",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: "This command displays information about the freezer index.",
 	}
-	dbImportCmd = &cli.Command{
-		Action:    importLDBdata,
+	dbImportCmd = cli.Command{
+		Action:    utils.MigrateFlags(importLDBdata),
 		Name:      "import",
 		Usage:     "Imports leveldb-data from an exported RLP dump.",
 		ArgsUsage: "<dumpfile> <start (optional)",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: "The import command imports the specific chain data from an RLP encoded stream.",
 	}
-	dbExportCmd = &cli.Command{
-		Action:    exportChaindata,
+	dbExportCmd = cli.Command{
+		Action:    utils.MigrateFlags(exportChaindata),
 		Name:      "export",
 		Usage:     "Exports the chain data into an RLP dump. If the <dumpfile> has .gz suffix, gzip compression will be used.",
 		ArgsUsage: "<type> <dumpfile>",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: "Exports the specified chain data to an RLP encoded stream, optionally gzip-compressed.",
 	}
-	dbMetadataCmd = &cli.Command{
-		Action: showMetaData,
+	dbMetadataCmd = cli.Command{
+		Action: utils.MigrateFlags(showMetaData),
 		Name:   "metadata",
 		Usage:  "Shows metadata about the chain status.",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: "Shows metadata about the chain status.",
 	}
-	dbMigrateFreezerCmd = &cli.Command{
-		Action:    freezerMigrate,
+	dbMigrateFreezerCmd = cli.Command{
+		Action:    utils.MigrateFlags(freezerMigrate),
 		Name:      "freezer-migrate",
 		Usage:     "Migrate legacy parts of the freezer. (WARNING: may take a long time)",
 		ArgsUsage: "",
-		Flags: flags.Merge([]cli.Flag{
+		Flags: utils.GroupFlags([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabasePathFlags),
 		Description: `The freezer-migrate command checks your database for receipts in a legacy format and updates those.
@@ -338,9 +339,9 @@ func checkStateContent(ctx *cli.Context) error {
 		hasher.Read(got)
 		if !bytes.Equal(k, got) {
 			errs++
-			fmt.Printf("Error at %#x\n", k)
-			fmt.Printf("  Hash:  %#x\n", got)
-			fmt.Printf("  Data:  %#x\n", v)
+			fmt.Printf("Error at 0x%x\n", k)
+			fmt.Printf("  Hash:  0x%x\n", got)
+			fmt.Printf("  Data:  0x%x\n", v)
 		}
 		if time.Since(lastLog) > 8*time.Second {
 			log.Info("Iterating the database", "at", fmt.Sprintf("%#x", k), "elapsed", common.PrettyDuration(time.Since(startTime)))
@@ -417,7 +418,7 @@ func dbGet(ctx *cli.Context) error {
 
 	data, err := db.Get(key)
 	if err != nil {
-		log.Info("Get operation failed", "key", fmt.Sprintf("%#x", key), "error", err)
+		log.Info("Get operation failed", "key", fmt.Sprintf("0x%#x", key), "error", err)
 		return err
 	}
 	fmt.Printf("key %#x: %#x\n", key, data)
@@ -445,7 +446,7 @@ func dbDelete(ctx *cli.Context) error {
 		fmt.Printf("Previous value: %#x\n", data)
 	}
 	if err = db.Delete(key); err != nil {
-		log.Info("Delete operation returned an error", "key", fmt.Sprintf("%#x", key), "error", err)
+		log.Info("Delete operation returned an error", "key", fmt.Sprintf("0x%#x", key), "error", err)
 		return err
 	}
 	return nil
@@ -717,7 +718,7 @@ func showMetaData(ctx *cli.Context) error {
 		if val == nil {
 			return "<nil>"
 		}
-		return fmt.Sprintf("%d (%#x)", *val, *val)
+		return fmt.Sprintf("%d (0x%x)", *val, *val)
 	}
 	data := [][]string{
 		{"databaseVersion", pp(rawdb.ReadDatabaseVersion(db))},
@@ -727,7 +728,7 @@ func showMetaData(ctx *cli.Context) error {
 	if b := rawdb.ReadHeadBlock(db); b != nil {
 		data = append(data, []string{"headBlock.Hash", fmt.Sprintf("%v", b.Hash())})
 		data = append(data, []string{"headBlock.Root", fmt.Sprintf("%v", b.Root())})
-		data = append(data, []string{"headBlock.Number", fmt.Sprintf("%d (%#x)", b.Number(), b.Number())})
+		data = append(data, []string{"headBlock.Number", fmt.Sprintf("%d (0x%x)", b.Number(), b.Number())})
 	}
 	if b := rawdb.ReadSkeletonSyncStatus(db); b != nil {
 		data = append(data, []string{"SkeletonSyncStatus", string(b)})
@@ -735,7 +736,7 @@ func showMetaData(ctx *cli.Context) error {
 	if h := rawdb.ReadHeadHeader(db); h != nil {
 		data = append(data, []string{"headHeader.Hash", fmt.Sprintf("%v", h.Hash())})
 		data = append(data, []string{"headHeader.Root", fmt.Sprintf("%v", h.Root)})
-		data = append(data, []string{"headHeader.Number", fmt.Sprintf("%d (%#x)", h.Number, h.Number)})
+		data = append(data, []string{"headHeader.Number", fmt.Sprintf("%d (0x%x)", h.Number, h.Number)})
 	}
 	data = append(data, [][]string{{"frozen", fmt.Sprintf("%d items", ancients)},
 		{"lastPivotNumber", pp(rawdb.ReadLastPivotNumber(db))},

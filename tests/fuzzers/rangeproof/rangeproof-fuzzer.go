@@ -163,6 +163,7 @@ func (f *fuzzer) fuzz() int {
 			// Modify something in the proof db
 			// add stuff to proof db
 			// drop stuff from proof db
+
 		}
 		if f.exhausted {
 			break

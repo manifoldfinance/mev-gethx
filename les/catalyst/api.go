@@ -35,7 +35,9 @@ func Register(stack *node.Node, backend *les.LightEthereum) error {
 	stack.RegisterAPIs([]rpc.API{
 		{
 			Namespace:     "engine",
+			Version:       "1.0",
 			Service:       NewConsensusAPI(backend),
+			Public:        true,
 			Authenticated: true,
 		},
 	})
@@ -50,7 +52,7 @@ type ConsensusAPI struct {
 // The underlying blockchain needs to have a valid terminal total difficulty set.
 func NewConsensusAPI(les *les.LightEthereum) *ConsensusAPI {
 	if les.BlockChain().Config().TerminalTotalDifficulty == nil {
-		log.Warn("Catalyst started without valid total difficulty")
+		panic("Catalyst started without valid total difficulty")
 	}
 	return &ConsensusAPI{les: les}
 }

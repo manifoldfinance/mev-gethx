@@ -319,6 +319,7 @@ func (api *SignerAPI) openTrezor(url accounts.URL) {
 		log.Warn("failed to open wallet", "wallet", url, "err", err)
 		return
 	}
+
 }
 
 // startUSBListener starts a listener for USB events, for hardware wallet interaction
@@ -611,6 +612,7 @@ func (api *SignerAPI) SignTransaction(ctx context.Context, args apitypes.SendTxA
 	api.UI.OnApprovedTx(response)
 	// ...and to the external caller
 	return &response, nil
+
 }
 
 func (api *SignerAPI) SignGnosisSafeTx(ctx context.Context, signerAddress common.MixedcaseAddress, gnosisTx GnosisSafeTx, methodSelector *string) (*GnosisSafeTx, error) {

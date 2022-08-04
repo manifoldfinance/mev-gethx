@@ -138,6 +138,7 @@ func Debug(data []byte) int {
 }
 
 func (f *fuzzer) fuzz() int {
+
 	// This spongeDb is used to check the sequence of disk-db-writes
 	var (
 		spongeA     = &spongeDb{sponge: sha3.NewLegacyKeccak256()}
@@ -184,7 +185,7 @@ func (f *fuzzer) fuzz() int {
 	sort.Sort(vals)
 	for _, kv := range vals {
 		if f.debugging {
-			fmt.Printf("{\"%#x\" , \"%#x\"} // stacktrie.Update\n", kv.k, kv.v)
+			fmt.Printf("{\"0x%x\" , \"0x%x\"} // stacktrie.Update\n", kv.k, kv.v)
 		}
 		trieB.Update(kv.k, kv.v)
 	}

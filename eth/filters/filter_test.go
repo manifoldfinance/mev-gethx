@@ -72,6 +72,7 @@ func BenchmarkFilters(b *testing.B) {
 			receipt := makeReceipt(addr4)
 			gen.AddUncheckedReceipt(receipt)
 			gen.AddUncheckedTx(types.NewTransaction(999, common.HexToAddress("0x999"), big.NewInt(999), 999, gen.BaseFee(), nil))
+
 		}
 	})
 	for i, block := range chain {
