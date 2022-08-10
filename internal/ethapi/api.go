@@ -2639,7 +2639,7 @@ func (s *BundleAPI) CallBundle(ctx context.Context, args CallBundleArgs) (map[st
 			acl, gasUsed, vmerr, err := AccessListOnState(ctx, s.b, header, accessListState, txargs)
 			if err == nil {
 				if gasUsed != receipt.GasUsed {
-					log.Info("Gas used in receipt differ from accesslist", "receipt", receipt.GasUsed, "acl", gasUsed) // weird bug but it works
+					log.Debug("Gas used in receipt differ from accesslist", "receipt", receipt.GasUsed, "acl", gasUsed) // weird bug but it works
 				}
 				if vmerr != nil {
 					log.Info("CallBundle accesslist creation encountered vmerr", "vmerr", vmerr)
@@ -2792,6 +2792,14 @@ func (s *BundleAPI) EstimateGasBundle(ctx context.Context, args EstimateGasBundl
 		// Append result
 		jsonResult := map[string]interface{}{
 			"gasUsed": result.UsedGas,
+		}
+
+		if result.Err != nil {
+			jsonResult["error"] = result.Err.Error()
+			revert := result.Revert()
+			if len(revert) > 0 {
+				jsonResult["revert"] = string(revert)
+			}
 		}
 
 		// if simulation logs are requested append it to logs
