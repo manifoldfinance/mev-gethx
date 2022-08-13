@@ -1,0 +1,463 @@
+#############################################
+# https://staticcheck.io/docs/checks#SA6005 #
+#############################################
+[SA6005_01]
+match='if strings.ToLower(:[1]) == strings.ToLower(:[2])'
+rewrite='if strings.EqualFold(:[1], :[2])'
+
+[SA6005_02]
+match='if strings.ToLower(:[1]) != strings.ToLower(:[2])'
+rewrite='if !strings.EqualFold(:[1], :[2])'
+
+[SA6005_03]
+match='if strings.ToUpper(:[1]) == strings.ToUpper(:[2])'
+rewrite='if strings.EqualFold(:[1], :[2])'
+
+[SA6005_04]
+match='if strings.ToUpper(:[1]) != strings.ToUpper(:[2])'
+rewrite='if !strings.EqualFold(:[1], :[2])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1003 #
+############################################
+[S1003_01]
+match='strings.IndexRune(:[1], :[2]) > -1'
+rewrite='strings.ContainsRune(:[1], :[2])'
+
+[S1003_02]
+match='strings.IndexRune(:[1], :[2]) >= 0'
+rewrite='strings.ContainsRune(:[1], :[2])'
+
+[S1003_03]
+match='strings.IndexRune(:[1], :[2]) != -1'
+rewrite='strings.ContainsRune(:[1], :[2])'
+
+[S1003_04]
+match='strings.IndexRune(:[1], :[2]) == -1'
+rewrite='!strings.ContainsRune(:[1], :[2])'
+
+[S1003_05]
+match='strings.IndexRune(:[1], :[2]) < 0'
+rewrite='!strings.ContainsRune(:[1], :[2])'
+
+[S1003_06]
+match='strings.IndexAny(:[1], :[2]) > -1'
+rewrite='strings.ContainsAny(:[1], :[2])'
+
+[S1003_07]
+match='strings.IndexAny(:[1], :[2]) >= 0'
+rewrite='strings.ContainsAny(:[1], :[2])'
+
+[S1003_08]
+match='strings.IndexAny(:[1], :[2]) != -1'
+rewrite='strings.ContainsAny(:[1], :[2])'
+
+[S1003_09]
+match='strings.IndexAny(:[1], :[2]) == -1'
+rewrite='!strings.ContainsAny(:[1], :[2])'
+
+[S1003_10]
+match='strings.IndexAny(:[1], :[2]) < 0'
+rewrite='!strings.ContainsAny(:[1], :[2])'
+
+[S1003_11]
+match='strings.Index(:[1], :[2]) > -1'
+rewrite='strings.Contains(:[1], :[2])'
+
+[S1003_12]
+match='strings.Index(:[1], :[2]) >= 0'
+rewrite='strings.Contains(:[1], :[2])'
+
+[S1003_13]
+match='strings.Index(:[1], :[2]) != -1'
+rewrite='strings.Contains(:[1], :[2])'
+
+[S1003_14]
+match='strings.Index(:[1], :[2]) == -1'
+rewrite='!strings.Contains(:[1], :[2])'
+
+[S1003_15]
+match='strings.Index(:[1], :[2]) < 0'
+rewrite='!strings.Contains(:[1], :[2])'
+
+############################################
+# https://staticcheck.io/docs/checks#S1002 #
+############################################
+[S1002_01]
+match='if :[1:e] == true '
+rewrite='if :[1]'
+
+[S1002_02]
+match='if :[1:e] == false '
+rewrite='if !:[1]'
+
+############################################
+# https://staticcheck.io/docs/checks#S1004 #
+############################################
+[S1004_01]
+match='bytes.Compare(:[1], :[2]) == 0'
+rewrite='bytes.Equal(:[1], :[2])'
+
+[S1004_02]
+match='bytes.Compare(:[1], :[2]) != 0'
+rewrite='!bytes.Equal(:[1], :[2])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1005 #
+############################################
+[S1005_01]
+match='for :[~_], :[~_] = range'
+rewrite='for range'
+
+[S1005_02]
+match='for :[~_] = range'
+rewrite='for range'
+
+[S1005_03]
+match='for :[1:e], :[~_] = range'
+rewrite='for :[1] = range'
+
+[S1005_04]
+match='for :[1:e], :[~_] := range'
+rewrite='for :[1] := range'
+
+############################################
+# https://staticcheck.io/docs/checks#S1006 #
+############################################
+[S1006_01]
+match='for true {:[x]}'
+rewrite='for {:[x]}'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1010 #
+############################################
+# Small chance of FP: if builtin `len` is reassigned.
+[S1010_01]
+match=':[s.][:len(:[s])]'
+rewrite=':[s.][:]'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1012 #
+############################################
+[S1012_01]
+match='time.Now().Sub(:[x])'
+rewrite='time.Since(:[x])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1017 #
+############################################
+[S1017_01]
+match='''
+if strings.HasPrefix(:[id1.], :[s1.]) {
+  :[id1.] = :[id1.][len(:[s1]):]
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[id1] = strings.TrimPrefix(:[s1], :[id1])'
+
+[S1017_02]
+match='''
+if strings.HasPrefix(:[id1.], :[s1.]) {
+  :[id1.] = strings.TrimPrefix(:[id1], :[s1])
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[id1] = strings.TrimPrefix(:[s1], :[id1])'
+
+[S1017_03]
+match='''
+if strings.Contains(:[id1.], :[s1.]) {
+  :[id1.] = strings.Replace(:[id1], :[s1], :[rest])
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[id1] = strings.Replace(:[id1], :[s1], :[rest])'
+
+[S1017_04]
+match='''
+if strings.HasSuffix(:[id1.], :[s1.]) {
+  :[id1.] = :[id1.][:len(:[id1])-len(:[s1])]
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[id1] = strings.TrimSuffix(:[id1], :[s1])'
+
+[S1017_05]
+match='''
+if strings.HasPrefix(:[x.][:[i.]], :[s1]) {
+  :[x.][:[i.]] = :[x.][:[i.]][len(:[s1]):]
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[x][:[i]] = strings.TrimSuffix(:[x][:[i]], :[s1])'
+
+[S1017_06]
+match='''
+if strings.HasPrefix(:[x.][:[i.]], ":[s1]") {
+  :[x.][:[i.]] = :[x.][:[i.]][len(":[s1]"):]
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[x][:[i]] = strings.TrimSuffix(:[x][:[i]], :[s1])'
+
+[S1017_07]
+match='''
+if bytes.HasPrefix(:[id1.], :[s1.]) {
+  :[id1.] = :[id1.][len(:[s1]):]
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[id1] = bytes.TrimPrefix(:[s1], :[id1])'
+
+[S1017_08]
+match='''
+if bytes.HasPrefix(:[id1.], :[s1.]) {
+  :[id1.] = bytes.TrimPrefix(:[id1], :[s1])
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[id1] = bytes.TrimPrefix(:[s1], :[id1])'
+
+[S1017_09]
+match='''
+if bytes.Contains(:[id1.], :[s1.]) {
+  :[id1.] = bytes.Replace(:[id1], :[s1], :[rest])
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[id1] = bytes.Replace(:[id1], :[s1], :[rest])'
+
+[S1017_10]
+match='''
+if bytes.HasSuffix(:[id1.], :[s1.]) {
+  :[id1.] = :[id1.][:len(:[id1])-len(:[s1])]
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[id1] = bytes.TrimSuffix(:[id1], :[s1])'
+
+[S1017_11]
+match='''
+if bytes.HasPrefix(:[x.][:[i.]], :[s1]) {
+  :[x.][:[i.]] = :[x.][:[i.]][len(:[s1]):]
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[x][:[i]] = bytes.TrimSuffix(:[x][:[i]], :[s1])'
+
+[S1017_12]
+match='''
+if bytes.HasPrefix(:[x.][:[i.]], ":[s1]") {
+  :[x.][:[i.]] = :[x.][:[i.]][len(":[s1]"):]
+}:[else~( else)?]'''
+rule='where :[else] == ""'
+rewrite=':[x][:[i]] = bytes.TrimSuffix(:[x][:[i]], :[s1])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1018 #
+############################################
+[S1018_01]
+match='''
+for :[i.] := 0; :[i.] < :[n.]; :[i.]++ {
+  :[bs.][:[i]] = :[bs.][:[offset.]+:[i.]]
+}'''
+rewrite='''
+copy(:[bs.][::[n.]], :[bs.][:[offset.]:])'''
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1019 #
+############################################
+[S1019_01]
+match='make(:[1], :[2], :[2])'
+rewrite='make(:[1], :[2])'
+
+[S1019_02]
+match='make(map[:[[1]]]:[[1]], 0)'
+rewrite='make(map[:[[1]]]:[[1]])'
+
+[S1019_03]
+match='make(chan int, 0)'
+rewrite='make(chan int)'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1020 #
+############################################
+[S1020_01]
+match='if :[_.], ok := :[i.].(:[T]); ok && :[i.] != nil {:[body]}'
+rewrite='if :[_.], ok := :[i.].(:[T]); ok {:[body]}'
+
+[S1020_02]
+match='if :[_.], ok := :[i.].(:[T]); :[i.] != nil && ok {:[body]}'
+rewrite='if :[_.], ok := :[i.].(:[T]); ok {:[body]}'
+
+[S1020_03]
+match='''
+if :[i.] != nil {
+  if :[_.], ok := :[i.].(:[T]); ok {:[body]}
+}'''
+rewrite='if :[_.], ok := :[i.].(:[T]); ok {:[body]}'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1023 #
+############################################
+[S1023_01]
+match='func :[fn.](:[args]) {:[body] return }'
+rewrite='func :[fn.](:[args]) {:[body]}'
+
+[S1023_02]
+match='func() {:[body] return }'
+rewrite='func() {:[body]}'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1024 #
+############################################
+[S1024_01]
+match=':[x.].Sub(time.Now())'
+rewrite='time.Until(:[x])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1025 #
+############################################
+[S1025_01]
+match='fmt.Println("%s", ":[s]")'
+rewrite='fmt.Println(":[s]")'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1028 #
+############################################
+[S1028_01]
+match='errors.New(fmt.Sprintf(:[1]))'
+rewrite='fmt.Errorf(:[1])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1029 #
+############################################
+[S1029_01]
+match='for :[~_], :[r.] := range []rune(:[s.])'
+rewrite='for _, :[r] := range :[s]'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1032 #
+############################################
+# Minor FP: Don't recommend when a sort call happens before these.
+[S1032_01]
+match='sort.Sort(sort.IntSlice(:[1]))'
+rewrite='sort.Ints(:[1])'
+
+[S1032_02]
+match='sort.Sort(sort.StringSlice(:[1]))'
+rewrite='sort.Strings(:[1])'
+
+[S1032_03]
+match='sort.Sort(sort.Float64Slice(:[1]))'
+rewrite='sort.Float64s(:[1])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1035 #
+############################################
+[S1035_01] 
+match='headers.Add(http.CanonicalHeaderKey(:[1]), :[1])'
+rewrite='headers.Add(:[1], :[1])'
+
+[S1035_02] 
+match='headers.Del(http.CanonicalHeaderKey(:[1]))'
+rewrite='headers.Del(:[1])'
+
+[S1035_03] 
+match='headers.Get(http.CanonicalHeaderKey(:[1]))'
+rewrite='headers.Get(:[1])'
+
+[S1035_04] 
+match='headers.Set(http.CanonicalHeaderKey(:[1]))'
+rewrite='headers.Set(:[1])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1036 #
+############################################
+[S1036_01]
+match='''
+if :[~_], ok := :[m.][:[k]]; ok {
+    :[m.][:[k]] += :[x.]
+} else {
+    :[m.][:[k]] = :[x.]
+}'''
+rewrite=':[m][:[k]] += :[x]'
+
+[S1036_02]
+match='''
+if :[~_], ok := :[m.][:[k]]; ok {
+    :[m.][:[k]]++
+} else {
+    :[m.][:[k]] = 1
+}'''
+rewrite=':[m][:[k]]++'
+
+[S1036_03]
+match='''
+if :[~_], ok := :[m.][:[k]]; ok {
+	:[m.][:[k]] = append(:[m.][:[k]], ":[v1]")
+} else {
+	:[m.][:[k]] = []string{":[v1]"}
+}'''
+rewrite=':[m][:[k]] = append(:[m][:[k]], ":[v1]")'
+
+[S1036_04]
+match='''
+if :[~_], ok := :[m.][:[k]]; ok {
+	:[m.][:[k]] = append(:[m.][:[k]], ":[v1]", ":[v2]")
+} else {
+	:[m.][:[k]] = []string{":[v1]", ":[v2]"}
+}'''
+rewrite=':[m][:[k]] = append(:[m][:[k]], ":[v1]", ":[v2]")'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1037 #
+############################################
+[S1037_01]
+match='''
+select {
+	case <-time.After(:[t]):
+}'''
+rewrite='time.Sleep(:[t])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1038 #
+############################################
+[S1038_01]
+match='fmt.Print(fmt.Sprintf(":[1]", :[2]))'
+rewrite='fmt.Printf(":[1]", :[2])'
+
+[S1038_02]
+match='fmt.Println(fmt.Sprintf(":[1]", :[2]))'
+rewrite='fmt.Printf(":[1]\n", :[2])'
+
+[S1038_03]
+match='fmt.Fprint(nil, fmt.Sprintf(":[1]", :[2]))'
+rewrite='fmt.Fprintf(":[1]", :[2])'
+
+[S1038_04]
+match='fmt.Fprintln(nil, fmt.Sprintf(":[1]", :[2]))'
+rewrite='fmt.Fprintf(":[1]\n", :[2])'
+
+[S1038_05]
+match='fmt.Sprint(fmt.Sprintf(":[1]", :[2]))'
+rewrite='fmt.Sprintf(":[1]", :[2])'
+
+[S1038_06]
+match='fmt.Sprintln(fmt.Sprintf(":[1]", :[2]))'
+rewrite='fmt.Sprintf(":[1]\n", :[2])'
+
+
+############################################
+# https://staticcheck.io/docs/checks#S1039 #
+############################################
+[S1039]
+match='fmt.Sprintf("%s", ":[s]")'
+rewrite='":[s]"'

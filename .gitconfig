@@ -1,0 +1,3 @@
+[merge "keep-ours"]
+	name = resolve merge conflict with our version
+	driver = true
