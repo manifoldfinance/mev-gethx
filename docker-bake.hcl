@@ -1,14 +1,14 @@
-variable "ETHEREUM_CLIENT" {
-  default = "manifoldfinance/mev-gethx"
-}
+# -*- hcl -*-
 
-target "default" {
-  tags = [ETHEREUM_CLIENT]
-}
+# Special target: https://github.com/docker/metadata-action#bake-definition
 
-target "all" {
-  inherits = ["default"]
+target "docker-metadata-action" {}
+
+target "build" {
+  inherits = ["docker-metadata-action"]
+  context = "./"
+  dockerfile = "Dockerfile"
   platforms = [
-    "linux/amd64",
-  ] 
+    "linux/amd64"
+  ]
 }
