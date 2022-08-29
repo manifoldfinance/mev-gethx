@@ -6,20 +6,25 @@ ARG BUILDNUM=""
 # Build Geth in a stock Go builder container
 FROM golang:1.18-alpine as builder
 
+ENV GOPROXY=direct
+
+WORKDIR /go-ethereum
+
 RUN apk add --no-cache gcc musl-dev linux-headers git
+COPY go.mod go.sum /go-ethereum/
 
-# Get dependencies - will also be cached if we won't change go.mod/go.sum
-COPY go.mod /go-ethereum/
-COPY go.sum /go-ethereum/
-RUN cd /go-ethereum && go mod download
-
+RUN set -eux; \
+  go mod download; \
+	go mod verify
+  
 ADD . /go-ethereum
 RUN cd /go-ethereum && go run build/ci.go install ./cmd/geth
 
 # Pull Geth into a second stage deploy alpine container
-FROM alpine:latest
+FROM alpine:3.16
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates iptables iproute2 ip6tables
+
 COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
 
 EXPOSE 8545 8546 30303 30303/udp
