@@ -1,22 +1,15 @@
-name: lsif
 on:
-  push:
-    branches:
-      - master
-  pull_request:
+  - push
 
 jobs:
-  lsif:
+  lsif-go:
     # this line will prevent forks of this repo from uploading lsif indexes
-    #if: github.repository == 'mev-gethx'
+    if: github.repository == 'mev-gethx'
     runs-on: ubuntu-latest
     container: sourcegraph/lsif-go:latest
     steps:
       - uses: actions/checkout@v3
       - name: Generate LSIF data
         run: lsif-go
-        id: generate
       - name: Upload LSIF data
-        id: upload
-        run: src lsif upload -github-token=${{ secrets.GITHUB_TOKEN }}
-
+        run: src code-intel upload -github-token=${{ secrets.GITHUB_TOKEN }} -ignore-upload-failure
