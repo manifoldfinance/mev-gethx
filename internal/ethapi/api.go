@@ -18,6 +18,7 @@ package ethapi
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -2365,5 +2366,179 @@ func (s *SearcherAPI) CallBundle(ctx context.Context, args CallBundleArgs) (map[
 	ret["stateBlockNumber"] = parent.Number.Int64()
 
 	ret["bundleHash"] = "0x" + common.Bytes2Hex(bundleHash.Sum(nil))
+	return ret, nil
+}
+
+// EstimateGasBundleArgs are possible args for eth_estimateGasBundle
+type EstimateGasBundleArgs struct {
+	Txs                    []TransactionArgs     `json:"txs"`
+	BlockNumber            rpc.BlockNumber       `json:"blockNumber"`
+	StateBlockNumberOrHash rpc.BlockNumberOrHash `json:"stateBlockNumber"`
+	Coinbase               *string               `json:"coinbase"`
+	Timestamp              *uint64               `json:"timestamp"`
+	Timeout                *int64                `json:"timeout"`
+	//SimulationLogs         bool                  `json:"simulationLogs"`
+	CreateAccessList bool `json:"createAccessList"`
+}
+
+// callbundle, but doesnt require signing
+func (s *SearcherAPI) EstimateGasBundle(ctx context.Context, args EstimateGasBundleArgs) (map[string]interface{}, error) {
+	if len(args.Txs) == 0 {
+		return nil, errors.New("bundle missing txs")
+	}
+	if args.BlockNumber == 0 {
+		return nil, errors.New("bundle missing blockNumber")
+	}
+
+	timeoutMS := int64(5000)
+	if args.Timeout != nil {
+		timeoutMS = *args.Timeout
+	}
+	timeout := time.Millisecond * time.Duration(timeoutMS)
+
+	state, parent, err := s.b.StateAndHeaderByNumberOrHash(ctx, args.StateBlockNumberOrHash)
+	if state == nil || err != nil {
+		return nil, err
+	}
+	blockNumber := big.NewInt(int64(args.BlockNumber))
+	timestamp := parent.Time + 1
+	if args.Timestamp != nil {
+		timestamp = *args.Timestamp
+	}
+	coinbase := parent.Coinbase
+	if args.Coinbase != nil {
+		coinbase = common.HexToAddress(*args.Coinbase)
+	}
+
+	header := &types.Header{
+		ParentHash: parent.Hash(),
+		Number:     blockNumber,
+		GasLimit:   parent.GasLimit,
+		Time:       timestamp,
+		Difficulty: parent.Difficulty,
+		Coinbase:   coinbase,
+		BaseFee:    parent.BaseFee,
+	}
+
+	// Setup context so it may be cancelled when the call
+	// has completed or, in case of unmetered gas, setup
+	// a context with a timeout
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+
+	// Make sure the context is cancelled when the call has completed
+	// This makes sure resources are cleaned up
+	defer cancel()
+
+	// RPC Call gas cap
+	globalGasCap := s.b.RPCGasCap()
+
+	// Results
+	results := []map[string]interface{}{}
+
+	// Copy the original db so we don't modify it
+	statedb := state.Copy()
+
+	// Gas pool
+	gp := new(core.GasPool).AddGas(math.MaxUint64)
+
+	// Block context
+	blockContext := core.NewEVMBlockContext(header, s.chain, &coinbase)
+
+	// Feed each of the transactions into the VM ctx
+	// And try and estimate the gas used
+	for i, txArgs := range args.Txs {
+		// Since its a txCall we'll just prepare the
+		// state with a random hash
+		var randomHash common.Hash
+		rand.Read(randomHash[:])
+
+		// New random hash since its a call
+		statedb.Prepare(randomHash, i)
+
+		accessListState := statedb.Copy() // create a copy just in case we use it later for access list creation
+
+		// Convert tx args to msg to apply state transition
+		msg, err := txArgs.ToMessage(globalGasCap, header.BaseFee)
+		if err != nil {
+			return nil, err
+		}
+
+		// Prepare the hashes
+		txContext := core.NewEVMTxContext(msg)
+
+		// Get EVM Environment
+		vmenv := vm.NewEVM(blockContext, txContext, statedb, s.b.ChainConfig(), vm.Config{NoBaseFee: true})
+
+		// Apply state transition
+		result, err := core.ApplyMessage(vmenv, msg, gp)
+		if err != nil {
+			return nil, err
+		}
+
+		// Modifications are committed to the state
+		// Only delete empty objects if EIP158/161 (a.k.a Spurious Dragon) is in effect
+		statedb.Finalise(vmenv.ChainConfig().IsEIP158(blockNumber))
+
+		// Append result
+		jsonResult := map[string]interface{}{
+			"gasUsed": result.UsedGas,
+		}
+
+		if result.Err != nil {
+			jsonResult["error"] = result.Err.Error()
+			revert := result.Revert()
+			if len(revert) > 0 {
+				jsonResult["revert"] = string(revert)
+			}
+		}
+
+		// if simulation logs are requested append it to logs
+		// if an access list is requested create and append
+		if args.CreateAccessList {
+			// welp guess we're copying these again sigh
+			txArgFrom := msg.From()
+			txArgGas := hexutil.Uint64(msg.Gas())
+			txArgNonce := hexutil.Uint64(msg.Nonce())
+			txArgData := hexutil.Bytes(msg.Data())
+			txargs := TransactionArgs{
+				From:    &txArgFrom,
+				To:      msg.To(),
+				Gas:     &txArgGas,
+				Nonce:   &txArgNonce,
+				Data:    &txArgData,
+				ChainID: (*hexutil.Big)(s.chain.Config().ChainID),
+				Value:   (*hexutil.Big)(msg.Value()),
+			}
+			if msg.GasFeeCap().Cmp(big.NewInt(0)) == 0 { // no maxbasefee, set gasprice instead
+				txargs.GasPrice = (*hexutil.Big)(msg.GasPrice())
+			} else { // otherwise set base and priority fee
+				txargs.MaxFeePerGas = (*hexutil.Big)(msg.GasFeeCap())
+				txargs.MaxPriorityFeePerGas = (*hexutil.Big)(msg.GasTipCap())
+			}
+			acl, _, vmerr, err := AccessListOnState(ctx, s.b, header, accessListState, txargs)
+			if err == nil {
+				if vmerr != nil {
+					log.Info("CallBundle accesslist creation encountered vmerr", "vmerr", vmerr)
+				}
+				jsonResult["accessList"] = acl
+
+			} else {
+				log.Info("CallBundle accesslist creation encountered err", "err", err)
+				jsonResult["accessList"] = acl //
+			} // return the empty accesslist either way
+		}
+
+		results = append(results, jsonResult)
+	}
+
+	// Return results
+	ret := map[string]interface{}{}
+	ret["results"] = results
+
 	return ret, nil
 }
