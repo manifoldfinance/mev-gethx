@@ -1262,6 +1262,7 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 			localTxs[account] = txs
 		}
 	}
+<<<<<<< HEAD
 	if w.flashbots.isFlashbots && !w.flashbots.isMegabundleWorker {
 		bundles := w.eth.TxPool().MevBundles(env.header.Number, env.header.Time)
 		bundleTxs, bundle, numBundles, err := w.generateFlashbotsBundle(env, bundles, pending)
@@ -1313,6 +1314,60 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 		log.Info("Megabundle processed", "relay", w.flashbots.relayAddr, "totalProfit", ethIntToFloat(env.profit))
 	}
 
+||||||| de23cf910
+=======
+	if w.flashbots.isFlashbots && !w.flashbots.isMegabundleWorker {
+		bundles := w.eth.TxPool().MevBundles(env.header.Number, env.header.Time)
+		bundleTxs, bundle, numBundles, err := w.generateFlashbotsBundle(env, bundles, pending)
+		if err != nil {
+			log.Error("Failed to generate flashbots bundle", "err", err)
+			return err
+		}
+		log.Info("Flashbots bundle", "ethToCoinbase", ethIntToFloat(bundle.totalEth), "gasUsed", bundle.totalGasUsed, "bundleScore", bundle.mevGasPrice, "bundleLength", len(bundleTxs), "numBundles", numBundles, "worker", w.flashbots.maxMergedBundles)
+		if len(bundleTxs) == 0 {
+			return errors.New("no bundles to apply")
+		}
+		if err := w.commitBundle(env, bundleTxs, interrupt); err != nil {
+			return err
+		}
+		env.profit.Add(env.profit, bundle.ethSentToCoinbase)
+	}
+	if w.flashbots.isMegabundleWorker {
+		megabundle, err := w.eth.TxPool().GetMegabundle(w.flashbots.relayAddr, env.header.Number, env.header.Time)
+		log.Info("Starting to process a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle, "error", err)
+		if err != nil {
+			return err // no valid megabundle for this relay, nothing to do
+		}
+
+		// Flashbots bundle merging duplicates work by simulating TXes and then committing them once more.
+		// Megabundles API focuses on speed and runs everything in one cycle.
+		coinbaseBalanceBefore := env.state.GetBalance(env.coinbase)
+		if err := w.commitBundle(env, megabundle.Txs, interrupt); err != nil {
+			log.Info("Could not commit a Megabundle", "relay", w.flashbots.relayAddr, "megabundle", megabundle)
+			return err
+		}
+		var txStatuses = map[common.Hash]bool{}
+		for _, receipt := range env.receipts {
+			txStatuses[receipt.TxHash] = receipt.Status == types.ReceiptStatusSuccessful
+		}
+		for _, tx := range megabundle.Txs {
+			status, ok := txStatuses[tx.Hash()]
+			if !ok {
+				log.Error("No TX receipt after megabundle simulation", "TxHash", tx.Hash())
+				return errors.New("could not apply megabundle")
+			}
+			if !status && !containsHash(megabundle.RevertingTxHashes, tx.Hash()) {
+				log.Info("Ignoring megabundle because of failing TX", "relay", w.flashbots.relayAddr, "TxHash", tx.Hash())
+				return errors.New("reverting megabundle tx")
+			}
+		}
+		coinbaseBalanceAfter := env.state.GetBalance(env.coinbase)
+		coinbaseDelta := big.NewInt(0).Sub(coinbaseBalanceAfter, coinbaseBalanceBefore)
+		env.profit = coinbaseDelta
+		log.Info("Megabundle processed", "relay", w.flashbots.relayAddr, "totalProfit", ethIntToFloat(env.profit))
+	}
+
+>>>>>>> 1ff2c741467e6b8b40ebdc64a8718101f41b23ca
 	if len(localTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(env.signer, localTxs, env.header.BaseFee)
 		if err := w.commitTransactions(env, txs, interrupt); err != nil {
