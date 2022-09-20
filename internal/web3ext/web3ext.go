@@ -625,6 +625,7 @@ web3._extend({
 			call: 'eth_getLogs',
 			params: 1,
 		}),
+<<<<<<< HEAD
 		new web3._extend.Method({
 			name: 'callBundle',
 			call: 'eth_callBundle',
@@ -645,6 +646,19 @@ web3._extend({
 			call: 'eth_sendMegabundle',
 			params: 1
 		}),
+||||||| de23cf910
+=======
+		new web3._extend.Method({
+			name: 'sendBundle',
+			call: 'eth_sendBundle',
+			params: 1,
+		}),
+		new web3._extend.Method({
+			name: 'sendMegabundle',
+			call: 'eth_sendMegabundle',
+			params: 1
+		}),
+>>>>>>> 1ff2c741467e6b8b40ebdc64a8718101f41b23ca
 	],
 	properties: [
 		new web3._extend.Property({
