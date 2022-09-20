@@ -1263,12 +1263,7 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 		}
 	}
 	if w.flashbots.isFlashbots && !w.flashbots.isMegabundleWorker {
-		bundles, err := w.eth.TxPool().MevBundles(env.header.Number, env.header.Time)
-		if err != nil {
-			log.Error("Failed to fetch pending transactions", "err", err)
-			return err
-		}
-
+		bundles := w.eth.TxPool().MevBundles(env.header.Number, env.header.Time)
 		bundleTxs, bundle, numBundles, err := w.generateFlashbotsBundle(env, bundles, pending)
 		if err != nil {
 			log.Error("Failed to generate flashbots bundle", "err", err)
